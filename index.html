@@ -264,14 +264,33 @@ footer{display:flex;justify-content:center;margin-top:14px}
   const css=v=>getComputedStyle(document.documentElement).getPropertyValue(v).trim();
 
   /* ---------- haptics ---------- */
-  // Android: Vibration API. iOS Safari 18+: clicking a hidden <input switch> gives one light tap.
+  // Android: Vibration API (pattern in ms: vibrate, pause, vibrate…).
+  // iOS Safari 18+: clicking a hidden <input switch> gives one light tap of fixed strength.
+  // Strength can't be changed on iOS, so a stronger feel = several taps in quick succession.
+  //   ios: groups of taps, e.g. [3,3] = 3 quick taps, short pause, 3 quick taps
+  const HAPTICS={
+    light: {ios:[1],       android:30},
+    add:   {ios:[3],       android:60},
+    cap:   {ios:[3,3],     android:[60,70,90]},
+    both:  {ios:[3,3,4],   android:[70,60,70,60,140]},
+    redeem:{ios:[4,3,5],   android:[90,60,90,60,200]},
+    reset: {ios:[2],       android:50}
+  };
+  const TAP_GAP=55;     // ms between taps inside a group
+  const GROUP_GAP=170;  // ms between groups
   const hLabel=document.createElement('label'),hInput=document.createElement('input');
   hInput.type='checkbox';hInput.setAttribute('switch','');
   hLabel.appendChild(hInput);hLabel.style.display='none';hLabel.setAttribute('aria-hidden','true');
   document.body.appendChild(hLabel);
-  function haptic(pattern){
-    try{ if(navigator.vibrate&&navigator.vibrate(pattern))return; }catch(e){}
-    try{ hLabel.click(); }catch(e){}
+  const tap=()=>{try{hLabel.click()}catch(e){}};
+  function haptic(name){
+    const h=HAPTICS[name]||HAPTICS.light;
+    try{ if(navigator.vibrate&&navigator.vibrate(h.android))return; }catch(e){}
+    let t=0;
+    h.ios.forEach(n=>{
+      for(let i=0;i<n;i++){ if(t===0)tap();else setTimeout(tap,t); t+=TAP_GAP; }
+      t+=GROUP_GAP-TAP_GAP;
+    });
   }
 
   /* ---------- particles ---------- */
@@ -449,13 +468,13 @@ footer{display:flex;justify-content:center;margin-top:14px}
 
     const nowFull=!wasFull&&isFull(c);
     if(nowFull&&fullCount()===COUNTERS.length&&prevCount<COUNTERS.length){
-      haptic([25,50,25,50,70]);bothHit(c);
+      haptic('both');bothHit(c);
       toast('Molemmat katot täynnä!',prev);
     }else if(nowFull){
-      haptic([20,40,30]);capHit(c);
+      haptic('cap');capHit(c);
       toast(c.name+': katto täynnä!',prev);
     }else{
-      haptic(15);
+      haptic('add');
       toast(c.name+' +'+fmtLong(v),prev);
     }
   }
@@ -465,7 +484,7 @@ footer{display:flex;justify-content:center;margin-top:14px}
     const prev=snap();
     COUNTERS.forEach(c=>{state[c.key]-=c.cap});
     state.redeemed++;
-    save();haptic([30,60,30,60,90]);
+    save();haptic('redeem');
     const r=redeemBtn.getBoundingClientRect();
     burst({x:r.left+r.width/2,y:r.top+r.height/2,w:r.width*.7,n:170,spread:1.6,min:8,max:19,size:7,g:.32,life:2300,colors:[css('--run'),css('--lift'),css('--gold')]});
     render();
@@ -485,13 +504,13 @@ footer{display:flex;justify-content:center;margin-top:14px}
     if(!ready()||holdRaf)return;
     if(e&&e.preventDefault)e.preventDefault();
     cancelAnimationFrame(drainRaf);drainRaf=0;
-    haptic(10);
+    haptic('light');
     redeemSmall.textContent='Pidä pohjassa…';
     holdStart=performance.now();nextTick=0.25;
     const tick=t=>{
       const x=Math.min(1,(t-holdStart)/HOLD),p=holdCurve(x);
       setP(p);
-      if(p>=nextTick&&nextTick<1){try{navigator.vibrate&&navigator.vibrate(8)}catch(err){}nextTick+=0.25}
+      if(p>=nextTick&&nextTick<1){haptic('light');nextTick+=0.25}
       if(x>=1){holdRaf=0;setP(0);redeem();return}
       holdRaf=requestAnimationFrame(tick);
     };
@@ -526,7 +545,7 @@ footer{display:flex;justify-content:center;margin-top:14px}
     }
     clearTimeout(resetTimer);disarm();
     const prev=snap();
-    state.run=0;state.lift=0;state.redeemed=0;save();render();haptic(20);
+    state.run=0;state.lift=0;state.redeemed=0;save();render();haptic('reset');
     toast('Saldot nollattu',prev);
   });
   function disarm(){resetBtn.classList.remove('armed');resetBtn.textContent='Nollaa kaikki saldot'}
@@ -542,7 +561,7 @@ footer{display:flex;justify-content:center;margin-top:14px}
   document.getElementById('undo').addEventListener('click',()=>{
     if(!undoSnap)return;
     state.run=undoSnap.run;state.lift=undoSnap.lift;state.redeemed=undoSnap.redeemed;
-    undoSnap=null;save();render();haptic(10);
+    undoSnap=null;save();render();haptic('light');
     toastText.textContent='Kumottu';
     clearTimeout(toastTimer);toastTimer=setTimeout(()=>toastEl.classList.remove('show'),1500);
   });
